@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { Mountain, Zap, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { base44 } from "@/api/base44Client";
+import { api } from "@/api/client";
 import { motion, AnimatePresence } from "framer-motion";
 
 import PhotoUploader from "../components/PhotoUploader";
 import ImageColorPicker from "../components/ImageColorPicker";
 import HeightInput from "../components/HeightInput";
-import AnalysisResults from "../components/AnalysisResults";
+import AnalysisResults from "../components/AnalysistResults";
 
 export default function ScanPage() {
   const [imageUrl, setImageUrl] = useState(null);
@@ -16,71 +16,43 @@ export default function ScanPage() {
   const [heightCm, setHeightCm] = useState(170);
   const [analysis, setAnalysis] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState(null);
 
   const canAnalyze = imageUrl && pickedColor && !isAnalyzing;
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setAnalysis(null);
+    setError(null);
 
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `You are an expert indoor bouldering route grader and climbing coach. Analyze this photo of an indoor bouldering wall.
+    try {
+      // Call our own backend which calls Claude
+      const result = await api.analyzeClimb({
+        image_url: imageUrl,
+        hold_color: pickedColor.label,
+        user_height_cm: heightCm,
+      });
 
-The climber tapped on a specific hold in the image. That hold has the following sampled color:
-- Hex: ${pickedColor.hex}
-- RGB: (${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b})
-- Approximate color label: ${pickedColor.label}
+      setAnalysis(result);
 
-Use this sampled color to identify ALL holds that belong to this route. Important: account for lighting differences across the wall — holds of the same color may appear slightly different in darker or brighter areas of the wall. Look for holds with this hue range throughout the entire image.
+      // Save to database (non-blocking — don't await, failure is ok)
+      api.saveAnalysis({
+        image_url: imageUrl,
+        hold_color: pickedColor.label,
+        user_height_cm: heightCm,
+        v_grade: result.v_grade,
+        estimated_wall_height_m: result.estimated_wall_height_m,
+        move_description: result.move_description,
+        hold_analysis: result.hold_analysis,
+        tips: result.tips,
+      }).catch(console.error);
 
-The climber's height is ${heightCm}cm (${Math.floor(heightCm / 2.54 / 12)}'${Math.round((heightCm / 2.54) % 12)}").
-
-Please analyze the route formed by these holds and respond with the following JSON fields:
-
-1. v_grade: A single V-scale rating string like "V3" or "V5" or "V0". This MUST be a specific grade like V0, V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11 etc. Do not leave this vague — commit to a specific grade.
-
-2. estimated_wall_height_m: A number — the estimated wall height in meters based on holds, panels, and any visible reference points.
-
-3. hold_analysis: A paragraph describing the types of holds you identified with this color (jugs, crimps, slopers, pinches, volumes etc.) and how they contribute to the difficulty.
-
-4. move_description: A paragraph describing the likely move sequence / beta for this route, including body positioning, heel hooks, dynos, or any notable cruxes.
-
-5. tips: 2–3 practical tips for someone of ${heightCm}cm height attempting this route.
-
-6. grade_reasoning: A sentence explaining why you chose that specific V grade.
-
-Be specific and decisive. Do not hedge the grade.`,
-      file_urls: [imageUrl],
-      response_json_schema: {
-        type: "object",
-        properties: {
-          v_grade: { type: "string" },
-          estimated_wall_height_m: { type: "number" },
-          hold_analysis: { type: "string" },
-          move_description: { type: "string" },
-          tips: { type: "string" },
-          grade_reasoning: { type: "string" }
-        },
-        required: ["v_grade", "estimated_wall_height_m", "hold_analysis", "move_description", "tips", "grade_reasoning"]
-      },
-      model: "claude_sonnet_4_6"
-    });
-
-    console.log("AI analysis result:", JSON.stringify(result));
-    setAnalysis(result);
-
-    await base44.entities.ClimbAnalysis.create({
-      image_url: imageUrl,
-      hold_color: pickedColor.label,
-      user_height_cm: heightCm,
-      v_grade: result.v_grade,
-      estimated_wall_height_m: result.estimated_wall_height_m,
-      move_description: result.move_description,
-      hold_analysis: result.hold_analysis,
-      tips: result.tips
-    });
-
-    setIsAnalyzing(false);
+    } catch (err) {
+      console.error("Analysis failed:", err);
+      setError("Analysis failed: " + err.message);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleReset = () => {
@@ -88,6 +60,7 @@ Be specific and decisive. Do not hedge the grade.`,
     setPickedColor(null);
     setHeightCm(170);
     setAnalysis(null);
+    setError(null);
   };
 
   return (
@@ -134,7 +107,7 @@ Be specific and decisive. Do not hedge the grade.`,
           </section>
         )}
 
-        {/* Step 2: Tap a hold to pick color */}
+        {/* Step 2: Tap a hold */}
         <AnimatePresence>
           {imageUrl && !analysis && (
             <motion.section
@@ -165,6 +138,13 @@ Be specific and decisive. Do not hedge the grade.`,
             </motion.section>
           )}
         </AnimatePresence>
+
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-sm text-red-400">
+            {error}
+          </div>
+        )}
 
         {/* Analyze Button */}
         <AnimatePresence>

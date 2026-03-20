@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
-import { Camera, Upload, X, Image } from "lucide-react";
+import { Camera, X, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { base44 } from "@/api/base44Client";
+import { api } from "@/api/client";
 
 export default function PhotoUploader({ imageUrl, onImageUploaded, isUploading, setIsUploading }) {
   const fileInputRef = useRef(null);
@@ -10,9 +10,15 @@ export default function PhotoUploader({ imageUrl, onImageUploaded, isUploading, 
   const handleFile = async (file) => {
     if (!file || !file.type.startsWith("image/")) return;
     setIsUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    onImageUploaded(file_url);
-    setIsUploading(false);
+    try {
+      const { file_url } = await api.uploadFile(file);
+      onImageUploaded(file_url);
+    } catch (error) {
+      console.error("Upload failed:", error);
+      alert("Upload failed: " + error.message);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDrop = (e) => {
@@ -80,7 +86,6 @@ export default function PhotoUploader({ imageUrl, onImageUploaded, isUploading, 
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        
         className="hidden"
         onChange={(e) => handleFile(e.target.files[0])}
       />
