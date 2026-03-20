@@ -1,6 +1,7 @@
 import React from "react";
 import { TrendingUp, Hand, Lightbulb, Ruler, Info } from "lucide-react";
 import { motion } from "framer-motion";
+import HoldGallery from "./HoldGallery";
 
 const gradeNum = (grade) => {
   if (!grade) return -1;
@@ -55,7 +56,7 @@ function InfoCard({ icon: Icon, label, children, delay }) {
   );
 }
 
-export default function AnalysisResults({ analysis, pickedColor }) {
+export default function AnalysisResults({ analysis, pickedColor, imageUrl }) {
   if (!analysis) return null;
 
   const grade = analysis.v_grade || analysis.grade || null;
@@ -93,7 +94,6 @@ export default function AnalysisResults({ analysis, pickedColor }) {
         <p className={`text-sm font-medium mt-2 ${gradeColor(grade)} opacity-70`}>
           {gradeLabel(grade)}
         </p>
-
         {analysis.estimated_wall_height_m && (
           <div className="flex items-center justify-center gap-2 mt-5 pt-5 border-t border-zinc-700/50 text-zinc-400">
             <Ruler className="w-4 h-4" />
@@ -120,22 +120,34 @@ export default function AnalysisResults({ analysis, pickedColor }) {
         </motion.div>
       )}
 
+      {/* Hold Gallery */}
+      {analysis.holds && analysis.holds.length > 0 && imageUrl && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
+          className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5"
+        >
+          <HoldGallery holds={analysis.holds} imageUrl={imageUrl} />
+        </motion.div>
+      )}
+
       {/* Details Grid */}
       <div className="grid gap-4 sm:grid-cols-2">
         {analysis.hold_analysis && (
-          <InfoCard icon={Hand} label="Hold Analysis" delay={0.1}>
+          <InfoCard icon={Hand} label="Hold Analysis" delay={0.2}>
             {analysis.hold_analysis}
           </InfoCard>
         )}
         {analysis.move_description && (
-          <InfoCard icon={TrendingUp} label="Move Breakdown" delay={0.2}>
+          <InfoCard icon={TrendingUp} label="Move Breakdown" delay={0.3}>
             {analysis.move_description}
           </InfoCard>
         )}
       </div>
 
       {analysis.tips && (
-        <InfoCard icon={Lightbulb} label="Beta Tips" delay={0.3}>
+        <InfoCard icon={Lightbulb} label="Beta Tips" delay={0.4}>
           {analysis.tips}
         </InfoCard>
       )}

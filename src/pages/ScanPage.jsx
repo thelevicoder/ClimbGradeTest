@@ -186,7 +186,7 @@ export default function ScanPage() {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4 }}
             >
-              <AnalysisResults analysis={analysis} pickedColor={pickedColor} />
+              <AnalysisResults analysis={analysis} pickedColor={pickedColor} imageUrl={imageUrl} />
             </motion.section>
           )}
         </AnimatePresence>

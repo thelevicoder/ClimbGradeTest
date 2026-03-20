@@ -25,7 +25,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}${ext}`;
 
     const { error } = await supabase.storage
-      .from('climb-analysis')
+      .from('climbing-images')
       .upload(fileName, file.buffer, {
         contentType: file.mimetype,
         upsert: false,
@@ -34,7 +34,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (error) throw error;
 
     const { data: { publicUrl } } = supabase.storage
-      .from('climb-analysis')
+      .from('climbing-images')
       .getPublicUrl(fileName);
 
     res.json({ file_url: publicUrl });
@@ -125,10 +125,28 @@ Respond with ONLY a valid JSON object — no markdown, no extra text, just the J
   "hold_analysis": "description of hold types and how they contribute to difficulty",
   "move_description": "description of the move sequence and beta",
   "tips": "2-3 practical tips for someone of this height",
-  "grade_reasoning": "one sentence explaining the grade choice"
+  "grade_reasoning": "one sentence explaining the grade choice",
+  "holds": [
+    {
+      "x": 45.2,
+      "y": 30.1,
+      "width": 8.0,
+      "height": 6.0,
+      "type": "crimp",
+      "description": "Small crimp requiring precise finger placement. This is the crux hold.",
+      "position_in_route": "start"
+    }
+  ]
 }
 
-Commit to a specific V grade. Do not hedge.`;
+For the "holds" array, identify EVERY hold of this color on the wall. For each hold:
+- x, y: the CENTER of the hold as a PERCENTAGE of the total image width/height (0-100)
+- width, height: the size of the hold as a PERCENTAGE of the total image width/height
+- type: one of "jug", "crimp", "sloper", "pinch", "pocket", "volume", "foothold"
+- description: 1 sentence about this specific hold and how to use it
+- position_in_route: one of "start", "low", "mid", "high", "top"
+
+Be precise with coordinates. Commit to a specific V grade. Do not hedge.`;
 }
 
 function getExtension(mimeType) {
