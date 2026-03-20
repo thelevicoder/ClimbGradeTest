@@ -1,0 +1,42 @@
+{
+  "name": "ClimbAnalysis",
+  "type": "object",
+  "properties": {
+    "image_url": {
+      "type": "string",
+      "description": "URL of the uploaded wall photo"
+    },
+    "hold_color": {
+      "type": "string",
+      "description": "Selected hold color for the route"
+    },
+    "user_height_cm": {
+      "type": "number",
+      "description": "User height in centimeters"
+    },
+    "v_grade": {
+      "type": "string",
+      "description": "Estimated V-scale grade"
+    },
+    "estimated_wall_height_m": {
+      "type": "number",
+      "description": "Estimated wall height in meters"
+    },
+    "move_description": {
+      "type": "string",
+      "description": "Description of the moves and beta"
+    },
+    "hold_analysis": {
+      "type": "string",
+      "description": "Analysis of hold types and difficulty"
+    },
+    "tips": {
+      "type": "string",
+      "description": "Tips for the climber"
+    }
+  },
+  "required": [
+    "image_url",
+    "hold_color"
+  ]
+}
