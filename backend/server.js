@@ -25,7 +25,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}${ext}`;
 
     const { error } = await supabase.storage
-      .from('climbing-images')
+      .from('climb-analysis')
       .upload(fileName, file.buffer, {
         contentType: file.mimetype,
         upsert: false,
@@ -34,7 +34,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (error) throw error;
 
     const { data: { publicUrl } } = supabase.storage
-      .from('climbing-images')
+      .from('climb-analysis')
       .getPublicUrl(fileName);
 
     res.json({ file_url: publicUrl });
