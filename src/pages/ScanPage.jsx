@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Mountain, Zap, RotateCcw } from "lucide-react";
+import { Mountain, Zap, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/api/client";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,51 +7,86 @@ import { motion, AnimatePresence } from "framer-motion";
 import PhotoUploader from "../components/PhotoUploader";
 import ImageColorPicker from "../components/ImageColorPicker";
 import HeightInput from "../components/HeightInput";
+import HoldSelector from "../components/HoldSelector";
 import AnalysisResults from "../components/AnalysistResults";
 
+// Steps: upload → color → height → detecting → select → analyzing → results
 export default function ScanPage() {
-  const [imageUrl, setImageUrl] = useState(null);
+  const [imageUrl, setImageUrl]       = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [pickedColor, setPickedColor] = useState(null);
-  const [heightCm, setHeightCm] = useState(170);
-  const [analysis, setAnalysis] = useState(null);
+  const [heightCm, setHeightCm]       = useState(170);
+
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectedHolds, setDetectedHolds] = useState(null);   // null = not detected yet
+  const [wallTopY, setWallTopY]       = useState(0);
+  const [wallBottomY, setWallBottomY] = useState(100);
+
+  const [startIndices, setStartIndices] = useState([]);
+  const [endIndices, setEndIndices]     = useState([]);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState(null);
+  const [analysis, setAnalysis]       = useState(null);
+  const [error, setError]             = useState(null);
 
-  const canAnalyze = imageUrl && pickedColor && !isAnalyzing;
+  const canDetect  = imageUrl && pickedColor && !isDetecting;
+  const canAnalyze = detectedHolds && startIndices.length > 0 && endIndices.length > 0 && !isAnalyzing;
 
+  // ── Step 1: find holds via pixel detection ───────────────────────────────
+  const handleDetect = async () => {
+    setIsDetecting(true);
+    setDetectedHolds(null);
+    setStartIndices([]);
+    setEndIndices([]);
+    setAnalysis(null);
+    setError(null);
+    try {
+      const result = await api.detectHolds({
+        image_url: imageUrl,
+        hold_rgb: `${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b}`,
+      });
+      setDetectedHolds(result.holds);
+      setWallTopY(result.wall_top_y);
+      setWallBottomY(result.wall_bottom_y);
+    } catch (err) {
+      setError('Hold detection failed: ' + err.message);
+    } finally {
+      setIsDetecting(false);
+    }
+  };
+
+  // ── Step 2: grade with Claude ────────────────────────────────────────────
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setAnalysis(null);
     setError(null);
-
     try {
-      // Call our own backend which calls Claude
       const result = await api.analyzeClimb({
-        image_url: imageUrl,
-        hold_color: pickedColor.label,
-        hold_hex: pickedColor.hex,
-        hold_rgb: `${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b}`,
+        image_url:      imageUrl,
+        hold_color:     pickedColor.label,
+        hold_hex:       pickedColor.hex,
+        hold_rgb:       `${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b}`,
         user_height_cm: heightCm,
+        holds:          detectedHolds,
+        wall_top_y:     wallTopY,
+        wall_bottom_y:  wallBottomY,
+        start_indices:  startIndices,
+        end_indices:    endIndices,
       });
-
       setAnalysis(result);
 
-      // Save to database (non-blocking — don't await, failure is ok)
       api.saveAnalysis({
-        image_url: imageUrl,
-        hold_color: pickedColor.label,
+        image_url:      imageUrl,
+        hold_color:     pickedColor.label,
         user_height_cm: heightCm,
-        v_grade: result.v_grade,
+        v_grade:        result.v_grade,
         estimated_wall_height_m: result.estimated_wall_height_m,
         move_description: result.move_description,
-        hold_analysis: result.hold_analysis,
-        tips: result.tips,
+        hold_analysis:  result.hold_analysis,
+        tips:           result.tips,
       }).catch(console.error);
-
     } catch (err) {
-      console.error("Analysis failed:", err);
-      setError("Analysis failed: " + err.message);
+      setError('Analysis failed: ' + err.message);
     } finally {
       setIsAnalyzing(false);
     }
@@ -61,6 +96,9 @@ export default function ScanPage() {
     setImageUrl(null);
     setPickedColor(null);
     setHeightCm(170);
+    setDetectedHolds(null);
+    setStartIndices([]);
+    setEndIndices([]);
     setAnalysis(null);
     setError(null);
   };
@@ -80,82 +118,103 @@ export default function ScanPage() {
             </div>
           </div>
           {(imageUrl || analysis) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleReset}
-              className="text-zinc-400 hover:text-white"
-            >
-              <RotateCcw className="w-4 h-4 mr-1.5" />
-              New Scan
+            <Button variant="ghost" size="sm" onClick={handleReset} className="text-zinc-400 hover:text-white">
+              <RotateCcw className="w-4 h-4 mr-1.5" />New Scan
             </Button>
           )}
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
 
-        {/* Step 1: Upload */}
+        {/* ── Step 1: Upload ── */}
         {!imageUrl && (
           <section>
             <StepLabel number={1} label="Scan the Wall" />
             <PhotoUploader
               imageUrl={imageUrl}
-              onImageUploaded={(url) => { setImageUrl(url); setPickedColor(null); setAnalysis(null); }}
+              onImageUploaded={(url) => { setImageUrl(url); setPickedColor(null); setDetectedHolds(null); setAnalysis(null); }}
               isUploading={isUploading}
               setIsUploading={setIsUploading}
             />
           </section>
         )}
 
-        {/* Step 2: Tap a hold */}
+        {/* ── Step 2: Pick color ── */}
         <AnimatePresence>
           {imageUrl && !analysis && (
-            <motion.section
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
+            <motion.section initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.3 }}>
               <StepLabel number={2} label="Tap a Hold to Identify the Route" />
-              <ImageColorPicker
-                imageUrl={imageUrl}
-                onColorPicked={setPickedColor}
-                pickedColor={pickedColor}
-              />
+              <ImageColorPicker imageUrl={imageUrl} onColorPicked={(c) => { setPickedColor(c); setDetectedHolds(null); setStartIndices([]); setEndIndices([]); }} pickedColor={pickedColor} />
             </motion.section>
           )}
         </AnimatePresence>
 
-        {/* Step 3: Height */}
+        {/* ── Step 3: Height ── */}
         <AnimatePresence>
           {imageUrl && pickedColor && !analysis && (
-            <motion.section
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
+            <motion.section initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.3 }}>
               <StepLabel number={3} label="Your Height" />
               <HeightInput heightCm={heightCm} onHeightChange={setHeightCm} />
             </motion.section>
           )}
         </AnimatePresence>
 
-        {/* Error message */}
+        {/* ── Find Holds button ── */}
+        <AnimatePresence>
+          {imageUrl && pickedColor && !detectedHolds && !analysis && (
+            <motion.div initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.3 }}>
+              <Button
+                onClick={handleDetect}
+                disabled={!canDetect}
+                className="w-full h-12 rounded-xl text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-600 transition-all disabled:opacity-40"
+              >
+                {isDetecting ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Finding holds...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Search className="w-4 h-4" />
+                    Find Holds on Wall
+                  </div>
+                )}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Step 4: Select start / end holds ── */}
+        <AnimatePresence>
+          {detectedHolds && !analysis && (
+            <motion.section initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.3 }}>
+              <StepLabel number={4} label={`Mark Start & Finish Holds (${detectedHolds.length} holds found)`} />
+              <HoldSelector
+                imageUrl={imageUrl}
+                holds={detectedHolds}
+                wallTopY={wallTopY}
+                wallBottomY={wallBottomY}
+                startIndices={startIndices}
+                endIndices={endIndices}
+                onStartChange={setStartIndices}
+                onEndChange={setEndIndices}
+              />
+            </motion.section>
+          )}
+        </AnimatePresence>
+
+        {/* Error */}
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-sm text-red-400">
             {error}
           </div>
         )}
 
-        {/* Analyze Button */}
+        {/* ── Grade button ── */}
         <AnimatePresence>
-          {imageUrl && pickedColor && !analysis && (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
+          {detectedHolds && !analysis && (
+            <motion.div initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.3 }}>
               <Button
                 onClick={handleAnalyze}
                 disabled={!canAnalyze}
@@ -169,29 +228,30 @@ export default function ScanPage() {
                 ) : (
                   <div className="flex items-center gap-2">
                     <Zap className="w-5 h-5" />
-                    Grade This Route
+                    {!canAnalyze && detectedHolds
+                      ? startIndices.length === 0 ? 'Set a start hold first' : 'Set a finish hold first'
+                      : 'Grade This Route'}
                   </div>
                 )}
               </Button>
-              <p className="text-xs text-zinc-600 text-center mt-2">
-                AI will find all matching holds and grade the route
-              </p>
+              {!canAnalyze && detectedHolds && (
+                <p className="text-xs text-zinc-600 text-center mt-2">
+                  Tap holds above to mark start (🟢) and finish (🔴) before grading
+                </p>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Results */}
+        {/* ── Results ── */}
         <AnimatePresence>
           {analysis && (
-            <motion.section
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4 }}
-            >
+            <motion.section initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ duration:0.4 }}>
               <AnalysisResults analysis={analysis} pickedColor={pickedColor} imageUrl={imageUrl} />
             </motion.section>
           )}
         </AnimatePresence>
+
       </main>
     </div>
   );
