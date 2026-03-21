@@ -128,7 +128,12 @@ export default function AnalysisResults({ analysis, pickedColor, imageUrl }) {
           transition={{ delay: 0.1, duration: 0.4 }}
           className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5"
         >
-          <HoldGallery holds={analysis.holds} imageUrl={imageUrl} />
+          <HoldGallery
+            holds={analysis.holds}
+            imageUrl={imageUrl}
+            wallTopY={analysis.wall_top_y ?? 0}
+            wallBottomY={analysis.wall_bottom_y ?? 100}
+          />
         </motion.div>
       )}
 
