@@ -47,7 +47,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 // ── 2. Analyze climbing route with Claude ────────────────────────────────────
 app.post('/api/analyze', async (req, res) => {
   try {
-    const { image_url, hold_color, user_height_cm } = req.body;
+    const { image_url, hold_color, hold_hex, hold_rgb, user_height_cm } = req.body;
 
     // Fetch the image and convert to base64 for Anthropic
     const imageResponse = await fetch(image_url);
@@ -57,7 +57,7 @@ app.post('/api/analyze', async (req, res) => {
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [{
         role: 'user',
         content: [
@@ -71,7 +71,7 @@ app.post('/api/analyze', async (req, res) => {
           },
           {
             type: 'text',
-            text: buildPrompt(hold_color, user_height_cm),
+            text: buildPrompt(hold_color, hold_hex, hold_rgb, user_height_cm),
           },
         ],
       }],
@@ -106,66 +106,71 @@ app.post('/api/save-analysis', async (req, res) => {
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function buildPrompt(holdColor, heightCm) {
+function buildPrompt(holdColor, holdHex, holdRgb, heightCm) {
   const feet = Math.floor(heightCm / 2.54 / 12);
   const inches = Math.round((heightCm / 2.54) % 12);
-  return `You are an expert indoor bouldering route grader with computer vision expertise. Analyze this photo of an indoor bouldering wall very carefully.
+  const colorDesc = holdHex
+    ? `"${holdColor}" — exact sampled color hex: ${holdHex}, RGB(${holdRgb})`
+    : `"${holdColor}"`;
+  return `You are a computer vision system analyzing a photo of an indoor bouldering wall. You must be extremely precise.
 
-The climber's selected hold color is: ${holdColor}
-The climber's height is ${heightCm}cm (${feet}'${inches}").
+THE CLIMBER SELECTED COLOR: ${colorDesc}
+The climber physically tapped on a hold in the image and we sampled its exact pixel color. Use the hex/RGB value as your ground truth for what color to look for.
+CLIMBER HEIGHT: ${heightCm}cm (${feet}'${inches}")
 
-STEP 1 - FIND THE WALL BOUNDARIES:
-Look at the image carefully. Identify:
-- wall_top_y: The Y percentage where the actual climbing wall surface begins (ignore any ceiling, lighting rigs, or space above the wall). This is where the wall panels/texture starts.
-- wall_bottom_y: The Y percentage where the wall ends at the bottom (ignore crash pads, floor mats, ground, and any space below the wall). This is where the last hold or wall panel ends.
+════════════════════════════════════
+TASK 1: FIND THE WALL BOUNDARIES
+════════════════════════════════════
+- wall_top_y: % of image height where the wall surface begins (ignore ceiling/lights/air above)
+- wall_bottom_y: % of image height where the wall ends. Crash mats and foam pads at the bottom are NOT the wall. Find where the wall panels stop and the mats begin.
 
-STEP 2 - FIND HOLDS (NOT VOLUMES):
-Volumes are large geometric shapes (triangles, boxes, wedges) bolted to the wall that create surface features. DO NOT include volumes.
-Only identify actual holds: jugs, crimps, slopers, pinches, pockets, footholds — the smaller resin/plastic pieces bolted onto the wall or onto volumes.
+════════════════════════════════════
+TASK 2: FIND ONLY "${holdColor.toUpperCase()}" COLORED HOLDS
+════════════════════════════════════
+STRICT COLOR RULE: Only mark holds matching hex ${holdHex || holdColor}.
+- Do NOT mark holds of any other color.
+- Gray, black, white volumes that look vaguely ${holdColor} are NOT ${holdColor} holds.
+- When in doubt about whether a hold matches the color, skip it.
 
-For each hold of color "${holdColor}":
-- Look at the ENTIRE wall surface carefully
-- Account for lighting — the same color hold may look lighter/darker in different areas
-- Be thorough — identify EVERY hold of this color, do not miss any
-- The coordinates must be percentages of the FULL original image dimensions (0-100), not cropped
+HOLD vs VOLUME:
+- Volumes = large geometric shapes (triangles, wedges, faceted panels) that form the wall surface. SKIP ALL VOLUMES.
+- Holds = small resin/plastic pieces (5-30cm real size) bolted to the wall that climbers grip. ONLY mark these.
 
-STEP 3 - GRADE THE ROUTE.
+For each ${holdColor} hold:
+- x, y: CENTER of hold as % of FULL image (x: left=0 right=100, y: top=0 bottom=100)
+- width, height: size as % of FULL image (holds are typically 2-7% wide, 1-5% tall)
+- type: "jug" | "crimp" | "sloper" | "pinch" | "pocket" | "foothold"
+- description: one sentence on how to use this hold
+- position_in_route: "start" | "low" | "mid" | "high" | "top" (based on position on the wall)
 
-Respond with ONLY valid JSON, no markdown:
+Before including a hold verify: (1) it matches hex ${holdHex || holdColor}, (2) it is a small resin hold not a volume, (3) x,y points at its center.
+
+════════════════════════════════════
+TASK 3: GRADE THE ROUTE
+════════════════════════════════════
+Return ONLY this JSON, no markdown:
 
 {
-  "wall_top_y": 5.2,
-  "wall_bottom_y": 88.4,
+  "wall_top_y": 8.0,
+  "wall_bottom_y": 82.0,
   "v_grade": "V3",
-  "estimated_wall_height_m": 4.5,
-  "hold_analysis": "description of hold types",
-  "move_description": "description of moves and beta",
-  "tips": "2-3 practical tips",
-  "grade_reasoning": "one sentence explaining the grade",
+  "estimated_wall_height_m": 4.2,
+  "hold_analysis": "...",
+  "move_description": "...",
+  "tips": "...",
+  "grade_reasoning": "...",
   "holds": [
     {
-      "x": 45.2,
-      "y": 30.1,
-      "width": 5.0,
-      "height": 4.0,
-      "type": "crimp",
-      "description": "Small two-finger crimp. Pull hard and keep your elbow in.",
-      "position_in_route": "mid"
+      "x": 34.5,
+      "y": 71.2,
+      "width": 4.0,
+      "height": 3.0,
+      "type": "jug",
+      "description": "Large positive jug, grip with full hand and pull through.",
+      "position_in_route": "start"
     }
   ]
-}
-
-COORDINATE RULES — follow these exactly:
-- x: horizontal center of the hold, as % of FULL image width (left=0, right=100)
-- y: vertical center of the hold, as % of FULL image height (top=0, bottom=100)
-- width: hold width as % of FULL image width (most holds are 3-10%)
-- height: hold height as % of FULL image height (most holds are 2-8%)
-- type: ONLY one of: "jug", "crimp", "sloper", "pinch", "pocket", "foothold" — NEVER "volume"
-- position_in_route: "start", "low", "mid", "high", or "top" based on vertical position on wall
-- description: exactly 1 sentence about technique for this specific hold
-
-Be extremely thorough with hold detection. It is better to include too many holds than to miss any.
-Do not include volumes. Commit to a specific V grade.`;
+}`;
 }
 
 function getExtension(mimeType) {

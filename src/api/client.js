@@ -19,11 +19,11 @@ export const api = {
   },
 
   // Analyze a climbing route — returns the AI analysis object
-  async analyzeClimb({ image_url, hold_color, user_height_cm }) {
+  async analyzeClimb({ image_url, hold_color, hold_hex, hold_rgb, user_height_cm }) {
     const response = await fetch(`${API_BASE_URL}/api/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_url, hold_color, user_height_cm }),
+      body: JSON.stringify({ image_url, hold_color, hold_hex, hold_rgb, user_height_cm }),
     });
 
     if (!response.ok) {

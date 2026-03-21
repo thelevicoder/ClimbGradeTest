@@ -30,6 +30,8 @@ export default function ScanPage() {
       const result = await api.analyzeClimb({
         image_url: imageUrl,
         hold_color: pickedColor.label,
+        hold_hex: pickedColor.hex,
+        hold_rgb: `${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b}`,
         user_height_cm: heightCm,
       });
 
