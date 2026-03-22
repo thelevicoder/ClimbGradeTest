@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import PhotoUploader    from "../components/PhotoUploader";
 import ImageColorPicker from "../components/ImageColorPicker";
 import HeightInput      from "../components/HeightInput";
-import BoundarySelector from "../components/BoundarySelector";
+import BoundarySelector from "../components/Boundaryselector.jsx";
 import HoldSelector     from "../components/HoldSelector";
 import AnalysisResults  from "../components/AnalysistResults";
 
