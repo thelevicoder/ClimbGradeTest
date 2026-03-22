@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import PhotoUploader    from "../components/PhotoUploader";
 import ImageColorPicker from "../components/ImageColorPicker";
 import HeightInput      from "../components/HeightInput";
-import BoundarySelector from "../components/Boundaryselector.jsx";
+import BoundarySelector from "../components/BoundarySelector";
 import HoldSelector     from "../components/HoldSelector";
 import AnalysisResults  from "../components/AnalysistResults";
 
@@ -69,16 +69,17 @@ export default function ScanPage() {
     setError(null);
     try {
       const result = await api.analyzeClimb({
-        image_url:      imageUrl,
-        hold_color:     pickedColor.label,
-        hold_hex:       pickedColor.hex,
-        hold_rgb:       `${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b}`,
-        user_height_cm: heightCm,
-        holds:          detectedHolds,
-        wall_top_y:     wallTopY,
-        wall_bottom_y:  wallBottomY,
-        start_indices:  startIndices,
-        end_indices:    endIndices,
+        image_url:               imageUrl,
+        hold_color:              pickedColor.label,
+        hold_hex:                pickedColor.hex,
+        hold_rgb:                `${pickedColor.r}, ${pickedColor.g}, ${pickedColor.b}`,
+        user_height_cm:          heightCm,
+        holds:                   detectedHolds,
+        wall_top_y:              wallTopY,
+        wall_bottom_y:           wallBottomY,
+        start_indices:           startIndices,
+        end_indices:             endIndices,
+        estimated_wall_height_m: 4.0,  // standard gym wall height — update if you know exact
       });
       setAnalysis(result);
       api.saveAnalysis({
