@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Hand, Lightbulb, Ruler, Info, ListOrdered, ChevronDown, ChevronUp, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import HoldGallery from "./HoldGallery";
+import ClimbingAnimation from "./ClimbingAnimation";
 
 const gradeNum   = g => { const m=(g||'').match(/\d+/); return m?parseInt(m[0]):-1; };
 const gradeColor = g => { const n=gradeNum(g); if(n<=1)return"text-green-400"; if(n<=3)return"text-lime-400"; if(n<=5)return"text-yellow-400"; if(n<=7)return"text-orange-400"; if(n<=9)return"text-red-400"; return"text-rose-400"; };
@@ -97,7 +98,7 @@ function GradeBreakdown({ breakdown, numericScore }) {
   );
 }
 
-export default function AnalysisResults({ analysis, pickedColor, imageUrl }) {
+export default function AnalysisResults({ analysis, pickedColor, imageUrl, userHeightCm, startIndices, endIndices }) {
   if (!analysis) return null;
   const grade = analysis.v_grade || null;
 
@@ -144,6 +145,24 @@ export default function AnalysisResults({ analysis, pickedColor, imageUrl }) {
 
       {/* Grade breakdown (collapsible) */}
       <GradeBreakdown breakdown={analysis.grade_breakdown} numericScore={analysis.numeric_score}/>
+
+      {/* Climbing animation */}
+      {analysis.holds?.length > 0 && imageUrl && startIndices?.length > 0 && endIndices?.length > 0 && (
+        <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.08}}
+          className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
+          <ClimbingAnimation
+            imageUrl={imageUrl}
+            holds={analysis.holds}
+            wallTopY={analysis.wall_top_y ?? 0}
+            wallBottomY={analysis.wall_bottom_y ?? 100}
+            startIndices={startIndices}
+            endIndices={endIndices}
+            userHeightCm={userHeightCm || 170}
+            estimatedWallHeightM={analysis.estimated_wall_height_m || 4.0}
+            moves={analysis.grade_breakdown || []}
+          />
+        </motion.div>
+      )}
 
       {/* Hold gallery */}
       {analysis.holds?.length > 0 && imageUrl && (

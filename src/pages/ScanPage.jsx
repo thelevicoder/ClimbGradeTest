@@ -274,7 +274,14 @@ export default function ScanPage() {
         <AnimatePresence>
           {analysis && (
             <motion.section initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ duration:0.4 }}>
-              <AnalysisResults analysis={analysis} pickedColor={pickedColor} imageUrl={imageUrl} />
+              <AnalysisResults
+                analysis={analysis}
+                pickedColor={pickedColor}
+                imageUrl={imageUrl}
+                userHeightCm={heightCm}
+                startIndices={startIndices}
+                endIndices={endIndices}
+              />
             </motion.section>
           )}
         </AnimatePresence>
