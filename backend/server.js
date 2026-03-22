@@ -156,209 +156,156 @@ app.post('/api/save-analysis', async (req, res) => {
 /*
   HOLD DIFFICULTY SCORES (0-10 scale)
   Based on contact surface area and friction demands.
-  These are fixed physical properties — not opinions.
 */
 const HOLD_SCORES = {
-  jug:      1,   // Large positive edge, full hand wrap. Minimal finger force.
-  pocket:   2,   // 2-3 finger hole. Moderate pulleys load.
-  pinch:    3,   // Opposing thumb/finger force. High forearm recruitment.
-  sloper:   4,   // No positive edge. Pure friction + body position dependent.
-  crimp:    4,   // Small edge, high flexor + pulley load.
-  foothold: 0,   // Foot only, not graded as hand move.
-  hold:     2,   // Unknown — default moderate
+  jug:      1.0,
+  pocket:   2.0,
+  pinch:    3.0,
+  sloper:   3.5,
+  crimp:    4.0,
+  foothold: 0.0,
+  hold:     2.0,
 };
 
-/*
-  ANGLE MULTIPLIERS
-  Steeper wall = more body tension required = harder.
-*/
 const ANGLE_MULT = {
-  slab:       0.8,   // Less than vertical — balance dependent
-  vertical:   1.0,   // Reference
-  slight_overhang: 1.3,
-  overhang:   1.6,
-  steep:      2.0,
-  roof:       2.5,
+  slab:            0.75,
+  vertical:        1.0,
+  slight_overhang: 1.2,
+  overhang:        1.5,
+  steep:           1.9,
+  roof:            2.4,
 };
 
-/*
-  REACH DIFFICULTY
-  reach_ratio = distance_between_holds / climber_arm_span
-  arm_span ≈ height (Vitruvian ratio)
-*/
 function reachDifficulty(reachRatio) {
-  // 0-0.3  = very close, minimal difficulty
-  // 0.3-0.5 = comfortable reach
-  // 0.5-0.7 = moderate stretch
-  // 0.7-0.85 = hard reach
-  // 0.85-1.0 = near max reach
-  // >1.0    = requires dynamic/deadpoint
-  if (reachRatio < 0.30) return { score: 0.5, label: 'close',    dynamic: false };
-  if (reachRatio < 0.50) return { score: 1.5, label: 'moderate', dynamic: false };
-  if (reachRatio < 0.70) return { score: 3.0, label: 'stretch',  dynamic: false };
-  if (reachRatio < 0.85) return { score: 5.0, label: 'hard reach', dynamic: false };
-  if (reachRatio < 1.00) return { score: 7.0, label: 'near max', dynamic: false };
-  return                         { score: 9.0, label: 'dynamic',  dynamic: true  };
+  // reachRatio = move distance / median route move distance (normalized)
+  // 1.0 = average move for this route
+  if (reachRatio < 0.50) return { score: 0.3, label: 'close',      dynamic: false };
+  if (reachRatio < 0.85) return { score: 1.0, label: 'moderate',   dynamic: false };
+  if (reachRatio < 1.20) return { score: 2.0, label: 'normal',     dynamic: false };
+  if (reachRatio < 1.60) return { score: 3.5, label: 'stretch',    dynamic: false };
+  if (reachRatio < 2.00) return { score: 5.0, label: 'hard reach', dynamic: false };
+  return                         { score: 7.0, label: 'dynamic',    dynamic: true  };
 }
 
-/*
-  LATERAL DIFFICULTY
-  Large horizontal movement = hip rotation / flagging required
-*/
 function lateralDifficulty(lateralRatio) {
-  if (lateralRatio < 0.15) return 0;
-  if (lateralRatio < 0.30) return 0.5;
-  if (lateralRatio < 0.50) return 1.5;
-  return 3.0;
+  if (lateralRatio < 0.20) return 0;
+  if (lateralRatio < 0.40) return 0.4;
+  if (lateralRatio < 0.60) return 1.0;
+  return 2.0;
 }
 
 /*
-  V-GRADE MAPPING
-  Maps a numeric difficulty score to a V grade.
-  Calibrated so that:
-    - A route of all jugs close together = V0
-    - All crimps at full reach = V6+
+  V-GRADE MAPPING — recalibrated downward.
+  Real gym routes with jugs = V0-V1.
+  Moderate crimps, normal spacing = V2-V4.
+  Hard crimps / big moves = V5+.
 */
 function scoreToVGrade(score) {
-  // score per move average × number of moves weighted
-  if (score <  3)  return 'V0';
-  if (score <  5)  return 'V1';
-  if (score <  8)  return 'V2';
-  if (score < 12)  return 'V3';
-  if (score < 17)  return 'V4';
-  if (score < 23)  return 'V5';
-  if (score < 30)  return 'V6';
-  if (score < 38)  return 'V7';
-  if (score < 48)  return 'V8';
-  if (score < 60)  return 'V9';
+  if (score <  2)  return 'V0';
+  if (score <  4)  return 'V1';
+  if (score <  7)  return 'V2';
+  if (score < 11)  return 'V3';
+  if (score < 16)  return 'V4';
+  if (score < 22)  return 'V5';
+  if (score < 29)  return 'V6';
+  if (score < 37)  return 'V7';
+  if (score < 46)  return 'V8';
+  if (score < 56)  return 'V9';
   return 'V10+';
 }
 
 function computeGrade({ holds, start_indices, end_indices, user_height_cm, wall_top_y, wall_bottom_y, estimated_wall_height_m }) {
-  const armSpan = user_height_cm; // Vitruvian ratio
 
-  // cmPerPct: how many real cm = 1% of image height
-  // wall spans (wallBottom-wallTop)% of image = estimated_wall_height_m meters
-  const wallSpanPct = Math.max(wall_bottom_y - wall_top_y, 20); // never less than 20%
-  const rawCmPerPct = (estimated_wall_height_m * 100) / wallSpanPct;
-  // Clamp to realistic range: 1% of image = 2cm to 15cm
-  // (a 4m wall spanning 100% of image = 4cm/%, spanning 50% = 8cm/%)
-  const cmPerPct = Math.max(2, Math.min(rawCmPerPct, 15));
-
-  // Build ordered sequence of holds from start to end
-  // Sort holds by Y descending (bottom=start) — this is the natural climbing order
   const startIdx = start_indices[0] ?? 0;
   const endIdx   = end_indices[0]   ?? holds.length - 1;
 
-  // Get all holds not counting footholds, ordered bottom to top
   const climbHolds = holds
     .map((h, i) => ({ ...h, originalIndex: i }))
     .filter(h => h.type !== 'foothold')
-    .sort((a, b) => b.y - a.y); // bottom of wall first
+    .sort((a, b) => b.y - a.y);
 
-  // Find start and end positions in the sequence
   const startPos = climbHolds.findIndex(h => h.originalIndex === startIdx);
   const endPos   = climbHolds.findIndex(h => h.originalIndex === endIdx);
-
-  // Slice to just the route holds
   const routeStart = startPos >= 0 ? startPos : 0;
   const routeEnd   = endPos   >= 0 ? endPos   : climbHolds.length - 1;
   const routeHolds = climbHolds.slice(routeStart, routeEnd + 1);
 
   if (routeHolds.length < 2) {
-    return {
-      v_grade: 'V0',
-      numeric_score: 0,
-      grade_reasoning: 'Not enough holds to compute a grade.',
-      moves: [],
-      breakdown: [],
-    };
+    return { v_grade:'V0', numeric_score:0, grade_reasoning:'Not enough holds.', moves:[], breakdown:[] };
   }
+
+  // Compute pixel distances between consecutive holds
+  const rawDists = [];
+  for (let i = 0; i < routeHolds.length - 1; i++) {
+    const a = routeHolds[i], b = routeHolds[i+1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    rawDists.push(Math.sqrt(dx*dx + dy*dy));
+  }
+
+  // Median move distance on this specific route (% units)
+  const sorted = [...rawDists].sort((a,b)=>a-b);
+  const medianDist = sorted[Math.floor(sorted.length/2)] || 1;
 
   // ── Analyze each move ──────────────────────────────────────────────────────
   const moves = [];
   let totalScore = 0;
 
   for (let i = 0; i < routeHolds.length - 1; i++) {
-    const from = routeHolds[i];
-    const to   = routeHolds[i + 1];
+    const from = routeHolds[i], to = routeHolds[i+1];
+    const dxPct  = to.x - from.x, dyPct = to.y - from.y;
+    const distPct = Math.sqrt(dxPct*dxPct + dyPct*dyPct);
 
-    // Real-world distance between hold centers
-    const dxPct = to.x - from.x;
-    const dyPct = to.y - from.y; // positive = moving down (toward start), negative = up
-    const distPct = Math.sqrt(dxPct * dxPct + dyPct * dyPct);
-    const distCm  = distPct * cmPerPct;
+    // Reach ratio: this move vs the median move on this route
+    // 1.0 = average move, 2.0 = twice the average, etc.
+    const reachRatio   = distPct / medianDist;
+    const lateralRatio = Math.abs(dxPct) / (distPct || 1);
 
-    // Vertical component (how high you're reaching up)
-    const vertCm     = Math.abs(dyPct) * cmPerPct;
-    const horizCm    = Math.abs(dxPct) * cmPerPct;
-
-    // Reach ratio = vertical reach distance / arm span
-    const reachRatio   = vertCm  / armSpan;
-    const lateralRatio = horizCm / armSpan;
-
-    // Hold score for the destination hold
-    const holdScore = HOLD_SCORES[to.type] || 2;
-
-    // Wall angle score (infer from hold size + position — steeper = holds further apart horizontally)
+    const holdScore  = HOLD_SCORES[to.type] || 2;
     const angleScore = ANGLE_MULT[to.angle] || 1.0;
+    const reach      = reachDifficulty(reachRatio);
+    const lateral    = lateralDifficulty(lateralRatio);
 
-    // Reach difficulty
-    const reach = reachDifficulty(reachRatio);
-
-    // Lateral difficulty
-    const lateral = lateralDifficulty(lateralRatio);
-
-    // Move score = hold difficulty × angle × reach factor + lateral
     const moveScore = (holdScore * angleScore) + reach.score + lateral;
     totalScore += moveScore;
 
     moves.push({
-      fromIndex: from.originalIndex,
-      toIndex:   to.originalIndex,
-      fromHold:  from,
-      toHold:    to,
-      distCm:    Math.round(distCm),
-      vertCm:    Math.round(vertCm),
-      horizCm:   Math.round(horizCm),
-      reachRatio: Math.round(reachRatio * 100) / 100,
-      reachLabel: reach.label,
-      dynamic:   reach.dynamic,
-      moveScore: Math.round(moveScore * 10) / 10,
+      fromIndex:   from.originalIndex,
+      toIndex:     to.originalIndex,
+      fromHold:    from,
+      toHold:      to,
+      distPct:     Math.round(distPct * 10) / 10,
+      reachRatio:  Math.round(reachRatio * 100) / 100,
+      reachLabel:  reach.label,
+      dynamic:     reach.dynamic,
+      moveScore:   Math.round(moveScore * 10) / 10,
     });
   }
 
-  // ── Crux identification ────────────────────────────────────────────────────
-  const sortedMoves  = [...moves].sort((a,b) => b.moveScore - a.moveScore);
-  const cruxMove     = sortedMoves[0];
-  const cruxIndex    = moves.indexOf(cruxMove);
+  const cruxMove  = moves.reduce((best, m) => m.moveScore > best.moveScore ? m : best, moves[0]);
+  const cruxIdx   = moves.indexOf(cruxMove);
 
-  // ── Final score ───────────────────────────────────────────────────────────
-  // Weight: 60% total accumulated difficulty + 40% single hardest move
-  // This mirrors real climbing: a route is as hard as its crux, but volume matters
-  const cruxWeight  = cruxMove ? cruxMove.moveScore * 0.4 * routeHolds.length : 0;
-  const finalScore  = (totalScore * 0.6) + cruxWeight;
-  const vGrade      = scoreToVGrade(finalScore);
+  // Weight: 60% cumulative + 40% crux × route length factor
+  const cruxWeight = cruxMove ? cruxMove.moveScore * 0.4 * routeHolds.length : 0;
+  const finalScore = (totalScore * 0.6) + cruxWeight;
+  const vGrade     = scoreToVGrade(finalScore);
 
-  // ── Grade breakdown ────────────────────────────────────────────────────────
   const breakdown = moves.map((m, i) => ({
-    move:      i + 1,
-    from:      `Hold ${m.fromHold.originalIndex + 1} (${m.fromHold.type})`,
-    to:        `Hold ${m.toHold.originalIndex + 1} (${m.toHold.type})`,
-    distCm:    m.distCm,
-    reach:     m.reachLabel,
-    dynamic:   m.dynamic,
-    score:     m.moveScore,
-    isCrux:    m === cruxMove,
+    move:    i + 1,
+    from:    `Hold ${m.fromHold.originalIndex+1} (${m.fromHold.type})`,
+    to:      `Hold ${m.toHold.originalIndex+1} (${m.toHold.type})`,
+    distPct: m.distPct,
+    reach:   m.reachLabel,
+    dynamic: m.dynamic,
+    score:   m.moveScore,
+    isCrux:  m === cruxMove,
   }));
 
-  const gradeReasoning = `${vGrade} computed from ${moves.length} moves. ` +
-    `Total difficulty score: ${Math.round(finalScore)}. ` +
-    `Crux is Move ${cruxIndex + 1}: ${cruxMove?.reachLabel || ''} reach to a ${cruxMove?.toHold.type || ''} ` +
-    `(${cruxMove?.distCm || 0}cm, score ${cruxMove?.moveScore || 0}). ` +
-    `Average move score: ${Math.round(totalScore / moves.length * 10) / 10}.`;
+  const gradeReasoning =
+    `${vGrade} from ${moves.length} moves. Score: ${Math.round(finalScore)}. ` +
+    `Crux is Move ${cruxIdx+1}: ${cruxMove?.reachLabel||''} to a ${cruxMove?.toHold.type||''} ` +
+    `(score ${cruxMove?.moveScore||0}). Avg move score: ${Math.round(totalScore/moves.length*10)/10}.`;
 
-  return { v_grade: vGrade, numeric_score: Math.round(finalScore), grade_reasoning: gradeReasoning, moves, breakdown };
+  return { v_grade:vGrade, numeric_score:Math.round(finalScore), grade_reasoning:gradeReasoning, moves, breakdown };
 }
 
 /*
@@ -529,25 +476,36 @@ async function detectHolds(imgBuffer, targetR, targetG, targetB) {
 
 function mergeOverlappingHolds(inputHolds) {
   if (inputHolds.length === 0) return inputHolds;
+
   let boxes = inputHolds.map(h => ({
-    x1: h.x - h.width/2, y1: h.y - h.height/2,
-    x2: h.x + h.width/2, y2: h.y + h.height/2,
+    x1: h.x - h.width/2,  y1: h.y - h.height/2,
+    x2: h.x + h.width/2,  y2: h.y + h.height/2,
   }));
+
+  // Only merge boxes that genuinely overlap (gap <= 0) OR are within
+  // a very small overlap tolerance (1% of image) to join fragments of
+  // the SAME hold split by a shadow line.
+  // Do NOT merge boxes that are simply near each other — those are separate holds.
+  const OVERLAP_TOLERANCE = 1.0; // % of image — only merge if gap < 1%
+
   let changed = true;
   while (changed) {
     changed = false;
     const out = [], used = new Set();
     for (let i = 0; i < boxes.length; i++) {
       if (used.has(i)) continue;
-      let b = {...boxes[i]}; used.add(i);
-      for (let j = i+1; j < boxes.length; j++) {
+      let b = { ...boxes[i] }; used.add(i);
+      for (let j = i + 1; j < boxes.length; j++) {
         if (used.has(j)) continue;
         const c = boxes[j];
-        const gapX = Math.max(0, Math.max(b.x1,c.x1) - Math.min(b.x2,c.x2));
-        const gapY = Math.max(0, Math.max(b.y1,c.y1) - Math.min(b.y2,c.y2));
-        const thresh = Math.max(Math.min(b.x2-b.x1,c.x2-c.x1), Math.min(b.y2-b.y1,c.y2-c.y1)) * 0.5;
-        if (gapX <= thresh && gapY <= thresh) {
-          b = {x1:Math.min(b.x1,c.x1),y1:Math.min(b.y1,c.y1),x2:Math.max(b.x2,c.x2),y2:Math.max(b.y2,c.y2)};
+        const gapX = Math.max(0, Math.max(b.x1, c.x1) - Math.min(b.x2, c.x2));
+        const gapY = Math.max(0, Math.max(b.y1, c.y1) - Math.min(b.y2, c.y2));
+        // Only merge if they overlap or nearly touch (within tolerance)
+        // AND the merged result isn't so large it's clearly two separate holds
+        const mergedW = Math.max(b.x2, c.x2) - Math.min(b.x1, c.x1);
+        const mergedH = Math.max(b.y2, c.y2) - Math.min(b.y1, c.y1);
+        if (gapX <= OVERLAP_TOLERANCE && gapY <= OVERLAP_TOLERANCE && mergedW < 15 && mergedH < 15) {
+          b = { x1:Math.min(b.x1,c.x1), y1:Math.min(b.y1,c.y1), x2:Math.max(b.x2,c.x2), y2:Math.max(b.y2,c.y2) };
           used.add(j); changed = true;
         }
       }
@@ -555,12 +513,13 @@ function mergeOverlappingHolds(inputHolds) {
     }
     boxes = out;
   }
+
   return boxes
-    .filter(b => (b.x2-b.x1) < 30 && (b.y2-b.y1) < 30)
+    .filter(b => (b.x2-b.x1) < 20 && (b.y2-b.y1) < 20) // max 20% of image = real hold not volume
     .map(b => ({
-      x: Math.round((b.x1+b.x2)/2*10)/10,
-      y: Math.round((b.y1+b.y2)/2*10)/10,
-      width: Math.round((b.x2-b.x1)*10)/10,
+      x:      Math.round((b.x1+b.x2)/2*10)/10,
+      y:      Math.round((b.y1+b.y2)/2*10)/10,
+      width:  Math.round((b.x2-b.x1)*10)/10,
       height: Math.round((b.y2-b.y1)*10)/10,
     }));
 }
