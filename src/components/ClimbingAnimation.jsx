@@ -452,21 +452,26 @@ export default function ClimbingAnimation({
     renderFrame(0, 0);
   }, [ready, renderFrame]);
 
+  // Track poseIndex in a ref so the animation loop can read it without re-subscribing
+  const poseIndexRef = useRef(0);
+  useEffect(() => { poseIndexRef.current = poseIndex; }, [poseIndex]);
+
   useEffect(() => {
     if (!playing || !ready) return;
     const poses = posesRef.current;
     if (poses.length < 2) return;
 
-    let startTime = null;
     const totalMoves = poses.length - 1;
+    // Start elapsed time at the current pose so resuming mid-route works
+    const startOffset = poseIndexRef.current * TOTAL_PER_MOVE;
+    let startTime = null;
 
     const animate = (now) => {
-      if (!startTime) startTime = now;
-      const elapsed  = now - startTime;
+      if (!startTime) startTime = now - startOffset;
+      const elapsed   = now - startTime;
       const totalTime = totalMoves * TOTAL_PER_MOVE;
 
       if (elapsed >= totalTime) {
-        // Done
         stateRef.current.playing = false;
         setPlaying(false);
         setPoseIndex(totalMoves);
@@ -475,12 +480,13 @@ export default function ClimbingAnimation({
         return;
       }
 
-      const moveTime  = elapsed % TOTAL_PER_MOVE;
-      const moveIdx   = Math.floor(elapsed / TOTAL_PER_MOVE);
-      const t         = Math.min(moveTime / MOVE_DURATION, 1);
+      const moveTime = elapsed % TOTAL_PER_MOVE;
+      const moveIdx  = Math.floor(elapsed / TOTAL_PER_MOVE);
+      const t        = Math.min(moveTime / MOVE_DURATION, 1);
 
       renderFrame(moveIdx, t);
       setPoseIndex(moveIdx);
+      poseIndexRef.current = moveIdx;
       setMoveLabel(moveIdx < moveDescriptions.length ? moveDescriptions[moveIdx] : 'Route complete!');
 
       animRef.current = requestAnimationFrame(animate);
