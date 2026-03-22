@@ -23,114 +23,88 @@ function loadImage(url) {
   });
 }
 
-// ── Individual hold crop card ─────────────────────────────────────────────────
+// ── Individual hold crop ─────────────────────────────────────────────────────
 function HoldCard({ hold, imageUrl, index }) {
   const canvasRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
   const [error,  setError]  = useState(false);
+  // 4:3 aspect ratio for the card
+  const aspect = 4 / 3;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     loadImage(imageUrl).then(img => {
-      const IW = img.naturalWidth;
-      const IH = img.naturalHeight;
-      const pad = 7; // % padding around hold
+      const IW = img.naturalWidth, IH = img.naturalHeight;
+      const pad = 7;
+      const cropX = Math.max(0,   hold.x - hold.width /2 - pad);
+      const cropY = Math.max(0,   hold.y - hold.height/2 - pad);
+      const cropW = Math.min(100-cropX, hold.width  + pad*2);
+      const cropH = Math.min(100-cropY, hold.height + pad*2);
+      const px=(cropX/100)*IW, py=(cropY/100)*IH;
+      const pw=(cropW/100)*IW, ph=(cropH/100)*IH;
 
-      // Crop region in % of full image
-      const cropX = Math.max(0,   hold.x - hold.width  / 2 - pad);
-      const cropY = Math.max(0,   hold.y - hold.height / 2 - pad);
-      const cropW = Math.min(100 - cropX, hold.width  + pad * 2);
-      const cropH = Math.min(100 - cropY, hold.height + pad * 2);
+      // Canvas intrinsic 192×144 (4:3)
+      canvas.width=192; canvas.height=144;
+      const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#18181b'; ctx.fillRect(0,0,192,144);
 
-      // To pixels
-      const px = (cropX / 100) * IW;
-      const py = (cropY / 100) * IH;
-      const pw = (cropW / 100) * IW;
-      const ph = (cropH / 100) * IH;
+      const sc=Math.min(192/pw, 144/ph);
+      const dw=pw*sc, dh=ph*sc;
+      const dx=(192-dw)/2, dy=(144-dh)/2;
+      ctx.drawImage(img, px, py, pw, ph, dx, dy, dw, dh);
 
-      // Canvas is always 192×144 (4:3) — fit crop inside preserving aspect ratio
-      const CW = 192, CH = 144;
-      canvas.width  = CW;
-      canvas.height = CH;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#18181b';
-      ctx.fillRect(0, 0, CW, CH);
-
-      const scale  = Math.min(CW / pw, CH / ph);
-      const drawW  = pw * scale;
-      const drawH  = ph * scale;
-      const drawX  = (CW - drawW) / 2;
-      const drawY  = (CH - drawH) / 2;
-      ctx.drawImage(img, px, py, pw, ph, drawX, drawY, drawW, drawH);
-
-      // Orange ellipse around the hold center
-      const hcx = drawX + ((hold.x - cropX) / cropW) * drawW;
-      const hcy = drawY + ((hold.y - cropY) / cropH) * drawH;
-      const erx = Math.max((hold.width  / cropW) * drawW / 2 + 5, 10);
-      const ery = Math.max((hold.height / cropH) * drawH / 2 + 5, 8);
-
-      ctx.strokeStyle = 'rgba(251,146,60,0.9)';
-      ctx.lineWidth   = 2;
-      ctx.setLineDash([5, 3]);
-      ctx.beginPath();
-      ctx.ellipse(hcx, hcy, erx, ery, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      // Circle around hold
+      const hcx = dx + ((hold.x-cropX)/cropW)*dw;
+      const hcy = dy + ((hold.y-cropY)/cropH)*dh;
+      const erx = Math.max((hold.width /cropW)*dw/2+5, 10);
+      const ery = Math.max((hold.height/cropH)*dh/2+5, 8);
+      ctx.strokeStyle='rgba(251,146,60,0.9)'; ctx.lineWidth=2;
+      ctx.setLineDash([5,3]);
+      ctx.beginPath(); ctx.ellipse(hcx,hcy,erx,ery,0,0,Math.PI*2); ctx.stroke();
       ctx.setLineDash([]);
 
-      // Start / finish badge
-      if (hold.is_start) {
-        ctx.fillStyle = 'rgba(34,197,94,0.9)';
-        ctx.beginPath(); ctx.arc(CW-14, 14, 10, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('S', CW-14, 14);
-      } else if (hold.is_end) {
-        ctx.fillStyle = 'rgba(239,68,68,0.9)';
-        ctx.beginPath(); ctx.arc(CW-14, 14, 10, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('F', CW-14, 14);
+      // Start/Finish badge
+      if (hold.is_start || hold.is_end) {
+        const bc = hold.is_start ? 'rgba(34,197,94,0.9)' : 'rgba(239,68,68,0.9)';
+        ctx.fillStyle=bc;
+        ctx.beginPath(); ctx.arc(178,14,10,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='bold 9px sans-serif';
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(hold.is_start?'S':'F', 178, 14);
       }
-
       setLoaded(true);
-    }).catch(() => setError(true));
+    }).catch(()=>setError(true));
   }, [hold, imageUrl]);
 
   const posColor = POSITION_COLORS[hold.position_in_route] || POSITION_COLORS.mid;
 
   return (
     <motion.div
-      initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }}
-      transition={{ delay: index * 0.04, duration: 0.3 }}
+      initial={{opacity:0,y:16}} animate={{opacity:1,y:0}}
+      transition={{delay:index*0.04,duration:0.3}}
       className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden flex-shrink-0 w-48"
     >
-      {/* Fixed-ratio image area */}
-      <div className="relative bg-zinc-800/80" style={{ aspectRatio: '4/3' }}>
+      {/* Aspect-ratio wrapper */}
+      <div className="relative bg-zinc-800/80" style={{ paddingBottom:`${(1/aspect*100).toFixed(2)}%` }}>
         {error
           ? <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">Failed</div>
           : <>
-              <canvas
-                ref={canvasRef}
-                style={{ display:'block', width:'100%', height:'100%' }}
-                className={`transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-              />
-              {!loaded && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-5 h-5 border-2 border-zinc-600 border-t-orange-400 rounded-full animate-spin"/>
-                </div>
-              )}
+              <canvas ref={canvasRef}
+                style={{position:'absolute',top:0,left:0,width:'100%',height:'100%'}}
+                className={`transition-opacity duration-300 ${loaded?'opacity-100':'opacity-0'}`}/>
+              {!loaded && <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-zinc-600 border-t-orange-400 rounded-full animate-spin"/>
+              </div>}
             </>
         }
         <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-black/70 text-white text-xs font-bold flex items-center justify-center">
-          {index + 1}
+          {index+1}
         </div>
         <div className="absolute top-2 right-2 bg-black/50 rounded px-1 py-0.5 text-sm leading-none">
-          {TYPE_ICONS[hold.type] || '🪨'}
+          {TYPE_ICONS[hold.type]||'🪨'}
         </div>
       </div>
-
       <div className="p-3 space-y-2">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-semibold text-white capitalize">{hold.type}</span>
@@ -144,69 +118,49 @@ function HoldCard({ hold, imageUrl, index }) {
   );
 }
 
-// ── Wall overview with all holds marked ──────────────────────────────────────
+// ── Wall overview ─────────────────────────────────────────────────────────────
 function WallOverview({ holds, imageUrl, wallTopY, wallBottomY }) {
   const canvasRef = useRef(null);
-  const sizeRef   = useRef({ w: 1, h: 1 });
-  const [ready, setReady] = useState(false);
+  const [aspect,  setAspect]  = useState(0.75);
+  const [ready,   setReady]   = useState(false);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
+    setReady(false);
     loadImage(imageUrl).then(img => {
       const IW = img.naturalWidth;
-      const IH = img.naturalHeight;
+      const srcH = img.naturalHeight * (wallBottomY-wallTopY) / 100;
+      const ratio = srcH / IW;
+      setAspect(ratio);
 
-      // Source slice
-      const srcY = (wallTopY    / 100) * IH;
-      const srcH = ((wallBottomY - wallTopY) / 100) * IH;
-
-      // Fit to container width, preserve aspect, max height 600px
-      const container = canvas.parentElement;
-      const maxW = container ? container.clientWidth : 600;
-      const maxH = 600;
-      const aspect = srcH / IW;
-      let w = maxW, h = w * aspect;
-      if (h > maxH) { h = maxH; w = h / aspect; }
-      w = Math.round(w); h = Math.round(h);
-
-      sizeRef.current = { w, h };
-      canvas.width  = w;
-      canvas.height = h;
+      const CW = Math.min(800, IW);
+      const CH = Math.round(CW * ratio);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width  = CW;
+      canvas.height = CH;
 
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, srcY, IW, srcH, 0, 0, w, h);
+      const srcY = (wallTopY/100) * img.naturalHeight;
+      const srcHpx = (wallBottomY-wallTopY)/100 * img.naturalHeight;
+      ctx.drawImage(img, 0, srcY, IW, srcHpx, 0, 0, CW, CH);
 
-      const wallSpan = wallBottomY - wallTopY;
-
-      // Draw hold markers
+      const span = wallBottomY - wallTopY;
       holds.forEach((hold, i) => {
-        const cx = (hold.x / 100) * w;
-        const cy = ((hold.y - wallTopY) / wallSpan) * h;
-        const rx = Math.max((hold.width  / 100) * w  / 2, 10);
-        const ry = Math.max((hold.height / 100) * h / 2, 8);
+        const cx = (hold.x/100)*CW;
+        const cy = ((hold.y-wallTopY)/span)*CH;
+        const rx = Math.max((hold.width /100)*CW/2, 10);
+        const ry = Math.max((hold.height/100)*CH/2, 8);
+        const isStart=hold.is_start, isEnd=hold.is_end;
+        const color = isStart?'rgba(34,197,94,1)':isEnd?'rgba(239,68,68,1)':'rgba(251,146,60,0.9)';
 
-        const isStart = hold.is_start;
-        const isEnd   = hold.is_end;
-        const color   = isStart ? 'rgba(34,197,94,1)' : isEnd ? 'rgba(239,68,68,1)' : 'rgba(251,146,60,0.9)';
-
-        ctx.strokeStyle = color;
-        ctx.lineWidth   = isStart || isEnd ? 2.5 : 1.8;
+        ctx.strokeStyle=color; ctx.lineWidth=isStart||isEnd?2.5:1.8;
         ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx + 4, ry + 4, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(cx,cy,rx+4,ry+4,0,0,Math.PI*2); ctx.stroke();
 
-        // Number
-        ctx.fillStyle    = color;
-        ctx.font         = 'bold 11px sans-serif';
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'middle';
-        const label = isStart ? 'S' : isEnd ? 'F' : String(i + 1);
-        ctx.fillText(label, cx + rx + 10, cy);
+        ctx.fillStyle=color; ctx.font='bold 11px sans-serif';
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(isStart?'S':isEnd?'F':String(i+1), cx+rx+10, cy);
       });
-
       setReady(true);
     }).catch(console.error);
   }, [holds, imageUrl, wallTopY, wallBottomY]);
@@ -214,52 +168,43 @@ function WallOverview({ holds, imageUrl, wallTopY, wallBottomY }) {
   return (
     <div className="space-y-2">
       <p className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Wall Overview</p>
-      <div className="relative rounded-xl overflow-hidden bg-zinc-800">
-        {/* Let the canvas set its own height via style */}
-        <canvas
-          ref={canvasRef}
-          style={{ display:'block', width:'100%', height:'auto' }}
-          className={`transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
-        />
-        {!ready && (
-          <div className="h-48 flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-zinc-600 border-t-orange-400 rounded-full animate-spin"/>
-          </div>
-        )}
+      {/* Aspect-ratio wrapper */}
+      <div className="relative rounded-xl overflow-hidden bg-zinc-800"
+           style={{ paddingBottom:`${(aspect*100).toFixed(2)}%` }}>
+        <canvas ref={canvasRef}
+          style={{position:'absolute',top:0,left:0,width:'100%',height:'100%'}}
+          className={`transition-opacity duration-300 ${ready?'opacity-100':'opacity-0'}`}/>
+        {!ready && <div className="absolute inset-0 h-48 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-zinc-600 border-t-orange-400 rounded-full animate-spin"/>
+        </div>}
       </div>
     </div>
   );
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
+// ── Export ────────────────────────────────────────────────────────────────────
 export default function HoldGallery({ holds, imageUrl, wallTopY=0, wallBottomY=100 }) {
-  if (!holds || holds.length === 0) return null;
-
-  const filtered = holds.filter(h => h.type !== 'volume');
-  const sorted   = [...filtered].sort((a, b) => {
-    const ao = POSITION_ORDER[a.position_in_route] ?? 2;
-    const bo = POSITION_ORDER[b.position_in_route] ?? 2;
-    return ao !== bo ? ao - bo : b.y - a.y;
+  if (!holds || holds.length===0) return null;
+  const filtered = holds.filter(h=>h.type!=='volume');
+  const sorted   = [...filtered].sort((a,b)=>{
+    const ao=POSITION_ORDER[a.position_in_route]??2;
+    const bo=POSITION_ORDER[b.position_in_route]??2;
+    return ao!==bo ? ao-bo : b.y-a.y;
   });
-
   return (
     <div className="space-y-5">
       <WallOverview holds={sorted} imageUrl={imageUrl} wallTopY={wallTopY} wallBottomY={wallBottomY}/>
-
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Individual Holds</p>
           <span className="text-xs text-zinc-600">{sorted.length} holds</span>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-3">
-          {sorted.map((hold, i) => (
-            <HoldCard key={i} hold={hold} imageUrl={imageUrl} index={i}/>
-          ))}
+          {sorted.map((hold,i)=><HoldCard key={i} hold={hold} imageUrl={imageUrl} index={i}/>)}
         </div>
       </div>
-
       <div className="flex flex-wrap gap-2">
-        {Object.entries(POSITION_COLORS).map(([pos, color]) => (
+        {Object.entries(POSITION_COLORS).map(([pos,color])=>(
           <span key={pos} className={`text-xs px-2 py-0.5 rounded-full border capitalize ${color}`}>{pos}</span>
         ))}
       </div>

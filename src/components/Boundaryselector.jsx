@@ -77,16 +77,15 @@ export default function BoundarySelector({ imageUrl, leftBoundary, rightBoundary
     ctx.fillText('Right boundary', rx, 18);
   }, [leftBoundary, rightBoundary]);
 
-  // Load image, size canvas
+  // Load image, compute true aspect ratio
   useEffect(() => {
     loadImage(imageUrl).then(img => {
       imgRef.current = img;
-      const container = canvasRef.current?.parentElement;
-      if (!container) return;
-      const w = container.clientWidth;
-      const h = Math.min(w * (img.naturalHeight / img.naturalWidth), 420);
+      const ratio = img.naturalHeight / img.naturalWidth;
+      const w = Math.min(800, img.naturalWidth);
+      const h = Math.round(w * ratio);
       setCanvasW(w);
-      setCanvasH(Math.round(h));
+      setCanvasH(h);
     });
   }, [imageUrl]);
 
@@ -156,10 +155,10 @@ export default function BoundarySelector({ imageUrl, leftBoundary, rightBoundary
       <p className="text-xs text-zinc-500 text-center">
         Drag the <span className="text-green-400 font-semibold">green (L)</span> and <span className="text-red-400 font-semibold">red (R)</span> handles to crop out other routes on the same wall
       </p>
-      <div className="relative rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 select-none">
+      <div className="relative rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 select-none"
+           style={{ paddingBottom: canvasH > 1 ? `${(canvasH/canvasW*100).toFixed(2)}%` : '60%' }}>
         <canvas
           ref={canvasRef}
-          className="w-full block cursor-col-resize"
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
@@ -167,7 +166,7 @@ export default function BoundarySelector({ imageUrl, leftBoundary, rightBoundary
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          style={{ touchAction: 'none' }}
+          style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', touchAction:'none', cursor:'col-resize' }}
         />
       </div>
       <div className="flex gap-3 text-xs">

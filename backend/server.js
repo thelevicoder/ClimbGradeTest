@@ -235,13 +235,15 @@ function scoreToVGrade(score) {
 }
 
 function computeGrade({ holds, start_indices, end_indices, user_height_cm, wall_top_y, wall_bottom_y, estimated_wall_height_m }) {
-  const armSpan = user_height_cm; // Vitruvian ratio: arm span ≈ height
+  const armSpan = user_height_cm; // Vitruvian ratio
 
-  // Convert % coordinates to real-world cm
-  // wall_height_px = (wall_bottom_y - wall_top_y)% of image
-  // We know estimated_wall_height_m in real world
-  const wallHeightPct = wall_bottom_y - wall_top_y; // % of image
-  const cmPerPct = (estimated_wall_height_m * 100) / wallHeightPct; // cm per 1% of image
+  // cmPerPct: how many real cm = 1% of image height
+  // wall spans (wallBottom-wallTop)% of image = estimated_wall_height_m meters
+  const wallSpanPct = Math.max(wall_bottom_y - wall_top_y, 20); // never less than 20%
+  const rawCmPerPct = (estimated_wall_height_m * 100) / wallSpanPct;
+  // Clamp to realistic range: 1% of image = 2cm to 15cm
+  // (a 4m wall spanning 100% of image = 4cm/%, spanning 50% = 8cm/%)
+  const cmPerPct = Math.max(2, Math.min(rawCmPerPct, 15));
 
   // Build ordered sequence of holds from start to end
   // Sort holds by Y descending (bottom=start) — this is the natural climbing order
@@ -522,33 +524,45 @@ async function detectHolds(imgBuffer, targetR, targetG, targetB) {
     });
   }
   holds.sort((a,b) => b.y-a.y);
-  return mergeNearbyHolds(holds);
+  return mergeOverlappingHolds(holds);
 }
 
-function mergeNearbyHolds(holds) {
-  const merged = [], used = new Set();
-  for (let i = 0; i < holds.length; i++) {
-    if (used.has(i)) continue;
-    const group = [holds[i]]; used.add(i);
-    for (let j = i+1; j < holds.length; j++) {
-      if (used.has(j)) continue;
-      const dx = holds[i].x-holds[j].x, dy = holds[i].y-holds[j].y;
-      // Only merge if centers are within 3% of image — tighter than before
-      // to avoid merging adjacent holds that happen to be the same color
-      if (Math.sqrt(dx*dx+dy*dy) < 3) { group.push(holds[j]); used.add(j); }
+function mergeOverlappingHolds(inputHolds) {
+  if (inputHolds.length === 0) return inputHolds;
+  let boxes = inputHolds.map(h => ({
+    x1: h.x - h.width/2, y1: h.y - h.height/2,
+    x2: h.x + h.width/2, y2: h.y + h.height/2,
+  }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const out = [], used = new Set();
+    for (let i = 0; i < boxes.length; i++) {
+      if (used.has(i)) continue;
+      let b = {...boxes[i]}; used.add(i);
+      for (let j = i+1; j < boxes.length; j++) {
+        if (used.has(j)) continue;
+        const c = boxes[j];
+        const gapX = Math.max(0, Math.max(b.x1,c.x1) - Math.min(b.x2,c.x2));
+        const gapY = Math.max(0, Math.max(b.y1,c.y1) - Math.min(b.y2,c.y2));
+        const thresh = Math.max(Math.min(b.x2-b.x1,c.x2-c.x1), Math.min(b.y2-b.y1,c.y2-c.y1)) * 0.5;
+        if (gapX <= thresh && gapY <= thresh) {
+          b = {x1:Math.min(b.x1,c.x1),y1:Math.min(b.y1,c.y1),x2:Math.max(b.x2,c.x2),y2:Math.max(b.y2,c.y2)};
+          used.add(j); changed = true;
+        }
+      }
+      out.push(b);
     }
-    const minX = Math.min(...group.map(h=>h.x-h.width/2));
-    const maxX = Math.max(...group.map(h=>h.x+h.width/2));
-    const minY = Math.min(...group.map(h=>h.y-h.height/2));
-    const maxY = Math.max(...group.map(h=>h.y+h.height/2));
-    merged.push({
-      x: Math.round(group.reduce((s,h)=>s+h.x,0)/group.length*10)/10,
-      y: Math.round(group.reduce((s,h)=>s+h.y,0)/group.length*10)/10,
-      width:  Math.round((maxX-minX)*10)/10,
-      height: Math.round((maxY-minY)*10)/10,
-    });
+    boxes = out;
   }
-  return merged;
+  return boxes
+    .filter(b => (b.x2-b.x1) < 30 && (b.y2-b.y1) < 30)
+    .map(b => ({
+      x: Math.round((b.x1+b.x2)/2*10)/10,
+      y: Math.round((b.y1+b.y2)/2*10)/10,
+      width: Math.round((b.x2-b.x1)*10)/10,
+      height: Math.round((b.y2-b.y1)*10)/10,
+    }));
 }
 
 function colorMatches(r,g,b,tR,tG,tB,targetHsl,isLowSat) {
