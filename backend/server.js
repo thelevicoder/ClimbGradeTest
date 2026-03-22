@@ -505,11 +505,14 @@ async function detectHolds(imgBuffer, targetR, targetG, targetB) {
   const holds   = [];
   for (const c of Object.values(clusters)) {
     const area  = c.pixels.length;
-    if (area < imgArea*0.0001 || area > imgArea*0.015) continue;
+    // MIN: 0.00005 = tiny holds on wide walls still detected
+    // MAX: 0.025  = allow larger jugs, volumes are still bigger than this
+    if (area < imgArea*0.00005 || area > imgArea*0.025) continue;
     const bboxW = ((c.maxX-c.minX)/W)*100;
     const bboxH = ((c.maxY-c.minY)/H)*100;
     const ar    = bboxW/(bboxH||0.01);
-    if (ar > 6 || ar < 0.17) continue;
+    // Relaxed aspect ratio — some holds are quite elongated
+    if (ar > 8 || ar < 0.12) continue;
     holds.push({
       x: Math.round(((c.minX+c.maxX)/2/W)*1000)/10,
       y: Math.round(((c.minY+c.maxY)/2/H)*1000)/10,
@@ -530,7 +533,9 @@ function mergeNearbyHolds(holds) {
     for (let j = i+1; j < holds.length; j++) {
       if (used.has(j)) continue;
       const dx = holds[i].x-holds[j].x, dy = holds[i].y-holds[j].y;
-      if (Math.sqrt(dx*dx+dy*dy) < 5) { group.push(holds[j]); used.add(j); }
+      // Only merge if centers are within 3% of image — tighter than before
+      // to avoid merging adjacent holds that happen to be the same color
+      if (Math.sqrt(dx*dx+dy*dy) < 3) { group.push(holds[j]); used.add(j); }
     }
     const minX = Math.min(...group.map(h=>h.x-h.width/2));
     const maxX = Math.max(...group.map(h=>h.x+h.width/2));
@@ -548,10 +553,30 @@ function mergeNearbyHolds(holds) {
 
 function colorMatches(r,g,b,tR,tG,tB,targetHsl,isLowSat) {
   const hsl = rgbToHsl(r,g,b);
-  if (isLowSat) return Math.abs(hsl.l-targetHsl.l)<0.12 && Math.abs(hsl.s-targetHsl.s)<0.12;
-  let dH = Math.abs(hsl.h-targetHsl.h); if (dH>180) dH=360-dH;
-  if (hsl.s<0.15) return false;
-  return (dH/360)<0.08 && Math.abs(hsl.s-targetHsl.s)<0.35 && Math.abs(hsl.l-targetHsl.l)<0.35;
+
+  if (isLowSat) {
+    // White/gray/black: match on lightness and saturation
+    return Math.abs(hsl.l-targetHsl.l) < 0.15 && Math.abs(hsl.s-targetHsl.s) < 0.15;
+  }
+
+  // Colored holds: hue is the primary discriminator
+  let dH = Math.abs(hsl.h - targetHsl.h);
+  if (dH > 180) dH = 360 - dH;
+
+  // Reject pixels with very low saturation (they're gray, not colored)
+  if (hsl.s < 0.10) return false;
+
+  // Hue tolerance: ±32 degrees (0.089 of 360)
+  // Wider than before to catch same hold in different lighting
+  if ((dH / 360) > 0.089) return false;
+
+  // Saturation: allow ±0.40 — lighting changes saturation a lot
+  if (Math.abs(hsl.s - targetHsl.s) > 0.40) return false;
+
+  // Lightness: allow ±0.40 — holds in shadow vs highlight
+  if (Math.abs(hsl.l - targetHsl.l) > 0.40) return false;
+
+  return true;
 }
 
 function rgbToHsl(r,g,b) {
