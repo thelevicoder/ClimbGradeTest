@@ -22,10 +22,10 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const ext  = getExtension(file.mimetype);
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}${ext}`;
     const { error } = await supabase.storage
-      .from('climb-analysis')
+      .from('climbing-images')
       .upload(fileName, file.buffer, { contentType: file.mimetype, upsert: false });
     if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage.from('climb-analysis').getPublicUrl(fileName);
+    const { data: { publicUrl } } = supabase.storage.from('climbing-images').getPublicUrl(fileName);
     res.json({ file_url: publicUrl });
   } catch (err) {
     console.error('Upload error:', err);
