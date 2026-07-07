@@ -8,15 +8,13 @@ export default function HeightInput({ heightCm, onHeightChange }) {
     const totalInches = Math.round(cm / 2.54);
     const feet = Math.floor(totalInches / 12);
     const inches = totalInches % 12;
-    return { feet, inches, display: `${feet}'${inches}"` };
+    return `${feet}'${inches}"`;
   };
-
-  const fi = cmToFeetInches(heightCm);
 
   return (
     <div className="space-y-4">
       {/* Unit toggle */}
-      <div className="flex gap-1.5 bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit">
+      <div className="flex gap-1 bg-[#254540] p-1 rounded-full w-fit">
         {[
           { key: 'imperial', label: 'ft / in' },
           { key: 'metric',   label: 'cm' },
@@ -24,10 +22,10 @@ export default function HeightInput({ heightCm, onHeightChange }) {
           <button
             key={u.key}
             onClick={() => setUnit(u.key)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
               unit === u.key
-                ? 'bg-zinc-700 text-white shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-300'
+                ? 'bg-[#4ec9d6] text-white'
+                : 'text-white/50 hover:text-white/80'
             }`}
           >
             {u.label}
@@ -35,25 +33,18 @@ export default function HeightInput({ heightCm, onHeightChange }) {
         ))}
       </div>
 
-      {/* Display */}
+      {/* Height display */}
       <div className="flex items-end gap-2">
-        {unit === 'imperial' ? (
-          <>
-            <span className="text-5xl font-black tracking-tight text-white leading-none">{fi.feet}</span>
-            <span className="text-xl font-bold text-zinc-500 mb-1">ft</span>
-            <span className="text-5xl font-black tracking-tight text-white leading-none">{fi.inches}</span>
-            <span className="text-xl font-bold text-zinc-500 mb-1">in</span>
-          </>
-        ) : (
-          <>
-            <span className="text-5xl font-black tracking-tight text-white leading-none">{heightCm}</span>
-            <span className="text-xl font-bold text-zinc-500 mb-1">cm</span>
-          </>
+        <span className="text-5xl font-black text-white leading-none tracking-tight">
+          {unit === 'imperial' ? cmToFeetInches(heightCm) : heightCm}
+        </span>
+        {unit === 'metric' && (
+          <span className="text-xl font-bold text-white/50 mb-1">cm</span>
         )}
       </div>
 
       {/* Slider */}
-      <div className="pt-1">
+      <div>
         <Slider
           value={[heightCm]}
           onValueChange={([val]) => onHeightChange(val)}
@@ -63,8 +54,8 @@ export default function HeightInput({ heightCm, onHeightChange }) {
           className="w-full"
         />
         <div className="flex justify-between mt-2">
-          <span className="text-[11px] text-zinc-700">{unit === 'imperial' ? "3'11\"" : '120 cm'}</span>
-          <span className="text-[11px] text-zinc-700">{unit === 'imperial' ? "7'3\""  : '220 cm'}</span>
+          <span className="text-xs text-white/30">{unit === 'imperial' ? "3'11\"" : '120 cm'}</span>
+          <span className="text-xs text-white/30">{unit === 'imperial' ? "7'3\""  : '220 cm'}</span>
         </div>
       </div>
     </div>
