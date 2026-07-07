@@ -154,63 +154,76 @@ app.post('/api/save-analysis', async (req, res) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 /*
-  HOLD DIFFICULTY SCORES (0-10 scale)
-  Based on contact surface area and friction demands.
+  HOLD DIFFICULTY — torque/force required to grip the hold.
+  Jugs are near-zero effort; crimps demand maximum finger force.
 */
 const HOLD_SCORES = {
-  jug:      1.0,
+  jug:      0.5,
   pocket:   2.0,
-  pinch:    3.0,
-  sloper:   3.5,
-  crimp:    4.0,
+  pinch:    2.5,
+  sloper:   3.0,
+  crimp:    3.5,
   foothold: 0.0,
-  hold:     2.0,
+  hold:     1.5,
+};
+
+// Smaller holds require disproportionately more finger force.
+const SIZE_MULT = {
+  large:  0.6,
+  medium: 1.0,
+  small:  1.4,
+  tiny:   2.2,
+};
+
+// Texture changes friction — matters most on slopers and slabs.
+const TEXTURE_MULT = {
+  rough:  0.85,
+  medium: 1.0,
+  smooth: 1.2,
 };
 
 const ANGLE_MULT = {
-  slab:            0.75,
+  slab:            0.65,
   vertical:        1.0,
-  slight_overhang: 1.2,
-  overhang:        1.5,
-  steep:           1.9,
-  roof:            2.4,
+  slight_overhang: 1.25,
+  overhang:        1.6,
+  steep:           2.1,
+  roof:            2.8,
 };
 
 function reachDifficulty(reachRatio) {
-  // reachRatio = move distance / median route move distance (normalized)
-  // 1.0 = average move for this route
-  if (reachRatio < 0.50) return { score: 0.3, label: 'close',      dynamic: false };
-  if (reachRatio < 0.85) return { score: 1.0, label: 'moderate',   dynamic: false };
-  if (reachRatio < 1.20) return { score: 2.0, label: 'normal',     dynamic: false };
-  if (reachRatio < 1.60) return { score: 3.5, label: 'stretch',    dynamic: false };
-  if (reachRatio < 2.00) return { score: 5.0, label: 'hard reach', dynamic: false };
-  return                         { score: 7.0, label: 'dynamic',    dynamic: true  };
+  // reachRatio = this move / median move on this route. 1.0 = average.
+  if (reachRatio < 0.50) return { score: 0.1, label: 'close',      dynamic: false };
+  if (reachRatio < 0.85) return { score: 0.4, label: 'moderate',   dynamic: false };
+  if (reachRatio < 1.20) return { score: 0.8, label: 'normal',     dynamic: false };
+  if (reachRatio < 1.60) return { score: 1.8, label: 'stretch',    dynamic: false };
+  if (reachRatio < 2.00) return { score: 3.0, label: 'hard reach', dynamic: false };
+  return                         { score: 5.5, label: 'dynamic',    dynamic: true  };
 }
 
 function lateralDifficulty(lateralRatio) {
   if (lateralRatio < 0.20) return 0;
-  if (lateralRatio < 0.40) return 0.4;
-  if (lateralRatio < 0.60) return 1.0;
-  return 2.0;
+  if (lateralRatio < 0.40) return 0.2;
+  if (lateralRatio < 0.60) return 0.5;
+  return 1.0;
 }
 
 /*
-  V-GRADE MAPPING — recalibrated downward.
-  Real gym routes with jugs = V0-V1.
-  Moderate crimps, normal spacing = V2-V4.
-  Hard crimps / big moves = V5+.
+  V-GRADE MAPPING
+  Jugs on vertical = V0-V1. Medium crimps, normal moves = V3-V4.
+  Tiny holds on roof with dynamics = V9-V10+.
 */
 function scoreToVGrade(score) {
-  if (score <  2)  return 'V0';
-  if (score <  4)  return 'V1';
-  if (score <  7)  return 'V2';
-  if (score < 11)  return 'V3';
-  if (score < 16)  return 'V4';
-  if (score < 22)  return 'V5';
-  if (score < 29)  return 'V6';
-  if (score < 37)  return 'V7';
-  if (score < 46)  return 'V8';
-  if (score < 56)  return 'V9';
+  if (score <   4) return 'V0';
+  if (score <   9) return 'V1';
+  if (score <  16) return 'V2';
+  if (score <  30) return 'V3';
+  if (score <  45) return 'V4';
+  if (score <  58) return 'V5';
+  if (score <  74) return 'V6';
+  if (score <  92) return 'V7';
+  if (score < 125) return 'V8';
+  if (score < 175) return 'V9';
   return 'V10+';
 }
 
@@ -260,12 +273,16 @@ function computeGrade({ holds, start_indices, end_indices, user_height_cm, wall_
     const reachRatio   = distPct / medianDist;
     const lateralRatio = Math.abs(dxPct) / (distPct || 1);
 
-    const holdScore  = HOLD_SCORES[to.type] || 2;
-    const angleScore = ANGLE_MULT[to.angle] || 1.0;
-    const reach      = reachDifficulty(reachRatio);
-    const lateral    = lateralDifficulty(lateralRatio);
+    const holdScore    = HOLD_SCORES[to.type]         || 1.5;
+    const sizeMult     = SIZE_MULT[to.size_estimate]   || 1.0;
+    const textureMult  = TEXTURE_MULT[to.texture]      || 1.0;
+    const angleScore   = ANGLE_MULT[to.angle]          || 1.0;
+    const reach        = reachDifficulty(reachRatio);
+    const lateral      = lateralDifficulty(lateralRatio);
 
-    const moveScore = (holdScore * angleScore) + reach.score + lateral;
+    // holdDifficulty = torque (type) × size × texture × wall angle
+    const holdDifficulty = holdScore * sizeMult * textureMult * angleScore;
+    const moveScore = holdDifficulty + reach.score + lateral;
     totalScore += moveScore;
 
     moves.push({
@@ -284,8 +301,10 @@ function computeGrade({ holds, start_indices, end_indices, user_height_cm, wall_
   const cruxMove  = moves.reduce((best, m) => m.moveScore > best.moveScore ? m : best, moves[0]);
   const cruxIdx   = moves.indexOf(cruxMove);
 
-  // Weight: 60% cumulative + 40% crux × route length factor
-  const cruxWeight = cruxMove ? cruxMove.moveScore * 0.4 * routeHolds.length : 0;
+  // 60% cumulative difficulty + flat crux bonus (NOT multiplied by route length).
+  // The old formula used routeHolds.length as a multiplier, which inflated grades
+  // linearly with hold count — a 10-hold jug route scored harder than a 4-hold crimp.
+  const cruxWeight = cruxMove ? cruxMove.moveScore * 1.5 : 0;
   const finalScore = (totalScore * 0.6) + cruxWeight;
   const vGrade     = scoreToVGrade(finalScore);
 
