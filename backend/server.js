@@ -72,7 +72,7 @@ app.post('/api/analyze', async (req, res) => {
     const holdTypingPrompt = buildHoldTypingPrompt(hold_color, hold_hex, holds, wall_top_y, wall_bottom_y, start_indices, end_indices);
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       messages: [{
         role: 'user',
